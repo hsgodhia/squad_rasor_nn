@@ -1,0 +1,33 @@
+	self.lstm_drop_h = 0.1                  # dropout rate for recurrent hidden state of LSTM
+	self.lstm_drop_x = 0.4                  # dropout rate for inputs of LSTM
+	self.lstm_couple_i_and_f = True         # customizable LSTM configuration, see base/model.py
+	self.lstm_learn_initial_state = False
+	self.lstm_tie_x_dropout = True
+	self.lstm_sep_x_dropout = False
+	self.lstm_sep_h_dropout = False
+	self.lstm_w_init = 'uniform'
+	self.lstm_u_init = 'uniform'
+	self.lstm_forget_bias_init = 'uniform'
+	self.default_bias_init = 'uniform'
+
+	self.extra_drop_x = 0                   # dropout rate at an extra possible place
+	self.q_aln_ff_tie = True                # whether to tie the weights of the FF over question and the FF over passage
+	self.sep_stt_end_drop = False            # whether to have separate dropout masks for span start and
+											# span end representations
+
+	self.adam_beta1 = 0.9                   # see base/optimizer.py
+	self.adam_beta2 = 0.999
+	self.adam_eps = 1e-8
+
+	self.objective = 'span_multinomial'     # 'span_multinomial': multinomial distribution over all spans
+											# 'span_binary':      logistic distribution per span
+											# 'span_endpoints':   two multinomial distributions, over span start and end
+
+	self.ablation = 'only_q_align'          # 'only_q_align':     question encoded only by passage-aligned representation
+											# 'only_q_indep':     question encoded only by passage-independent representation
+											# None:               question encoded by both
+
+	assert all(k in self.__dict__ for k in kwargs)
+	assert all(k in self.__dict__ for k in compared)
+	self.__dict__.update(kwargs)
+	self._compared = compared

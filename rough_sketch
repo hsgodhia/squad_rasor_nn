@@ -1,0 +1,104 @@
+def linear(self, name, x, input_dim, output_dim, with_bias=True, 
+w_init='uniform', bias_init=0):
+     # x                 (..., input_dim)
+     n = namer(name)
+     W = self.make_param(n('W'), (input_dim, output_dim), w_init)
+     y = tt.dot(x, W)     # (..., output_dim)
+
+
+
+     p_stt_lin = self.linear(                              # (max_p_len, 
+batch_size, ff_dim)
+         'p_stt_lin', p_level_h_for_stt, 2*config.hidden_dim, ff_dim, 
+bias_init=config.default_bias_init)
+       p_end_lin = self.linear(                              # 
+(max_p_len, batch_size, ff_dim)
+         'p_end_lin', p_level_h_for_end, 2*config.hidden_dim, ff_dim, 
+with_bias=False)
+
+
+
+   def dropout(self, x, dropout_p):
+     return self.apply_dropout_noise(x, self.get_dropout_noise(x.shape, 
+dropout_p))
+
+
+  def ff(self, name, x, dims, activation, dropout_ps, **kwargs):
+
+
+     dataset_qtn_ctx_idxs = tt.ivector('dataset_qtn_ctx_idxs') # (num 
+questions in dataset,)
+     this maps from a quesetion to the paragparph where the answer lies
+
+
+     dataset_ctxs = tt.imatrix('dataset_ctxs')                   # (num 
+contexts in dataset, max_p_len of dataset)
+     dataset_ctx_masks = tt.imatrix('dataset_ctx_masks')         # (num 
+contexts in dataset, max_p_len of dataset)
+
+
+
+http://collabedit.com/mcctc
+
+
+import torch.nn as nn
+from torch.autograd import Variable
+
+class RasorModel(nn.Module):
+     def __init__(self, input_size, hidden_size, output_size):
+         super(RasorModel, self).__init__()
+         self.hidden_size = hidden_size
+         self.i2h = nn.Linear(input_size + hidden_size, hidden_size)
+         self.i2o = nn.Linear(input_size + hidden_size, output_size)
+         self.softmax = nn.LogSoftmax()
+
+     def forward(self, input, hidden):
+         combined = torch.cat((input, hidden), 1)
+         hidden = self.i2h(combined)
+         output = self.i2o(combined)
+         output = self.softmax(output)
+         return output, hidden
+
+     def initHidden(self):
+         return Variable(torch.zeros(1, self.hidden_size))
+
+n_hidden = 128
+rnn = RNN(n_letters, n_hidden, n_categories)
+
+
+model =
+
+http://collabedit.com/fcvwx
+
+
+
+
+
+def __init__(sel):
+     self.ffn = nn.Linear(300, 100)
+     self.relu = nn.ReLU()
+     self.softmax = nn.Softmax()
+
+     self.bilstm = nn.GRU(emb_dim=300, hid_dim = 100, layers=2, 
+bidirectional = True, n_output)
+
+
+for i in n_pass:
+     for j in n_que:
+         s[i,j] = nn.dot(self.relu(self.ffn(p_i)), 
+self.relu(self.ffn(q_j)))
+
+A = self.softmax(S)
+
+for i in n_pass:
+     Q_i = nn.dot(A[i, :], Q)
+#mapping each question to every passage word position
+
+
+i --indexes the passae wors
+j - index he question
+Q - embedding vector of one question
+
+self.bilstm(Q)
+
+http://collabedit.com/j9gkk

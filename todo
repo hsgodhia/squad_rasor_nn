@@ -1,0 +1,10 @@
+how to initialize it randomly in range [-init_rate, +init_rate]
+how to add learning rate decay
+how to add gradient clipping
+	self.lr_decay = 0.95
+	self.lr_decay_freq = 5000               # frequency with which to decay learning rate, measured in updates
+	self.max_grad_norm = 10                 # gradient clipping
+	self.ff_drop_x = 0.2                    # dropout rate of FF layers
+	self.init_scale = 5e-3                  # uniformly random weights are initialized in [-init_scale, +init_scale]
+	self.learning_rate = 1e-3
+
