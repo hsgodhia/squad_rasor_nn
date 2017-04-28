@@ -4,7 +4,6 @@ import pdb
 import torch.nn as nn
 from torch.autograd import Variable
 
-
 class SquadModel(nn.Module):
     # check if this vocab_size contains unkown, START, END token as well?
     def __init__(self, config, emb_data):
@@ -27,12 +26,12 @@ class SquadModel(nn.Module):
         self.w_a = nn.Linear(config.ff_dim, 1, bias=False)
 
         self.relu = nn.ReLU()
-        self.softmax = nn.Softmax()
+        self.logsoftmax = nn.LogSoftmax()
 
         self.hidden = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         # since we are using q_align and p_emb as p_star we have input as 2*emb_dim
         # num_layers = 2 and dropout = 0.1
-        self.gru = nn.GRU(2 * config.emb_dim, config.hidden_dim, config.num_bilstm_layers, 0.1, bidirectional=True)
+        self.gru = nn.GRU(2 * config.emb_dim, config.hidden_dim, config.num_layers, 0.1, bidirectional=True)
         self.cross_ents = nn.CrossEntropyLoss()
 
     def forward(self, config, p, p_mask, p_lens, q, q_mask, q_lens):
@@ -99,7 +98,7 @@ class SquadModel(nn.Module):
         span_scores_reshaped = self.sequence_linear_layer(self.w_a, span_ff_reshaped)  # (batch_size, max_p_len*max_ans_len)
 
         final_span_scores = span_masks_reshaped * span_scores_reshaped
-        return final_span_scores
+        return self.logsoftmax(final_span_scores)
 
     # input has dimension (sequence_len, batch_size, input_dim)
     def sequence_linear_layer(self, layer, inp):

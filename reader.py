@@ -90,7 +90,7 @@ def get_data(config, train):
     dev_tab_ds = _make_tabular_dataset(
       config.tokenized_dev_json_path, word_strs, has_answers=True, max_ans_len=config.max_ans_len)
 
-    word_emb_data = _contract_word_emb_data(word_emb_data, word_strs, config.learn_single_unk)
+    word_emb_data = _contract_word_emb_data(word_emb_data, word_strs, False)
     trn_vec_ds = _make_vectorized_dataset('train', trn_tab_ds, word_emb_data)
     dev_vec_ds = _make_vectorized_dataset('dev', dev_tab_ds, word_emb_data)
 
@@ -103,7 +103,7 @@ def get_data(config, train):
     tst_tab_ds = _make_tabular_dataset(
       tokenized_test_json_path, word_strs, has_answers=False, max_ans_len=config.max_ans_len)
 
-    word_emb_data = _contract_word_emb_data(word_emb_data, word_strs, config.learn_single_unk)
+    word_emb_data = _contract_word_emb_data(word_emb_data, word_strs, False)
     tst_vec_ds = _make_vectorized_dataset('test', tst_tab_ds, word_emb_data)
 
     tst_ds = SquadDataset(tst_tab_ds, tst_vec_ds)
