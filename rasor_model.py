@@ -26,13 +26,13 @@ class SquadModel(nn.Module):
         self.w_a = nn.Linear(config.ff_dim, 1, bias=False)
 
         self.relu = nn.ReLU()
+        self.softmax = nn.Softmax()
         self.logsoftmax = nn.LogSoftmax()
 
         self.hidden = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         # since we are using q_align and p_emb as p_star we have input as 2*emb_dim
         # num_layers = 2 and dropout = 0.1
-        self.gru = nn.GRU(2 * config.emb_dim, config.hidden_dim, config.num_layers, 0.1, bidirectional=True)
-        self.cross_ents = nn.CrossEntropyLoss()
+        self.gru = nn.LSTM(2 * config.emb_dim, config.hidden_dim, config.num_layers, 0.1, bidirectional=True)
 
     def forward(self, config, p, p_mask, p_lens, q, q_mask, q_lens):
         #all these inputs are of type autograd Variable
@@ -62,7 +62,8 @@ class SquadModel(nn.Module):
         q_align_ff_q_shuffled = q_align_ff_q.permute(1, 2, 0)  # (batch_size, ff_dim, max_q_len)
 
         q_align_scores = torch.bmm(q_align_ff_p_shuffled, q_align_ff_q_shuffled)  # (batch_size, max_p_len, max_q_len)
-        
+        #q_align_scores is basiaclly s_ij from the paper equation(6) i indexes paragraph, j indexes question
+
         # p_mask has dimensions (max_p_len, batch_size)
         p_mask_shuffled = torch.unsqueeze(p_mask, 2)  # results in (max_p_len, batch_size, 1)
         p_mask_shuffled = p_mask_shuffled.permute(1, 0, 2)  # (batch_size, max_p_len, 1)
@@ -72,10 +73,8 @@ class SquadModel(nn.Module):
         pq_mask = torch.bmm(p_mask_shuffled, q_mask_shuffled)  # (batch_size, max_p_len, max_q_len)
         pq_mask = pq_mask.float()
         q_align_mask_scores = q_align_scores * pq_mask  # elementwise matrix multiplication
-
-        # this internal pytorch softmax automatically does max, min shifting to prevent overflows
-        #q_align_weights = self.softmax(q_align_mask_scores)  # (batch_size, max_p_len, max_q_len)
-        q_align_weights = self.softmax_depths_with_mask(q_align_scores, pq_mask)
+        #not all (i,j) pairs of indexes are valid so we mask the invalid ones out
+        q_align_weights = self.sequence_softmax(q_align_mask_scores)  #softmax across the q_len index=2, this is what we do in eqn(7)
         q_emb_shuffled = q_emb.permute(1, 0, 2)  # (batch_size, max_q_len, emb_dim)
 
         q_align = torch.bmm(q_align_weights, q_emb_shuffled)  # (batch_size, max_p_len, emb_dim)
@@ -114,7 +113,7 @@ class SquadModel(nn.Module):
         """
 		h_0 (num_layers * num_directions, batch, hidden_size): tensor containing the initial hidden state for each element in the batch.
 		"""
-        return Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim))
+        return (Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)), Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)))
 
     def _span_sums(self, p_lens, stt, end, max_p_len, batch_size, dim, max_ans_len):
         # stt 		(max_p_len, batch_size, dim)
@@ -151,21 +150,9 @@ class SquadModel(nn.Module):
 
         return span_sums_reshapped, span_masks_reshaped
 
-    def softmax_depths_with_mask(self, x, mask):
-        #x has the dimension of (batch_size, max_p_len, max_q_len)
-        #mask has the dimension of (batch_size, max_p_len, max_q_len)    
-        x = x * mask
-        x_min, _ = x.min(2)
-        x_min = x_min.expand(x.size(0), x.size(1), x.size(2))
-        x -= x_min
-        x = x * mask
-        x_max, _ = x.max(2)
-        x_max = x_max.expand(x.size(0), x.size(1), x.size(2))
-        x -= x_max
-        e_x = mask * torch.exp(x)
-        sums = e_x.sum(2)
-        denom = sums + torch.eq(sums, 0).float()
-        denom = denom.expand(denom.size(0), denom.size(1), e_x.size(2))
-        y = e_x / denom
-        y = y * mask
-        return y
+    #q_align_weights = self.softmax(q_align_mask_scores)  # (batch_size, max_p_len, max_q_len)
+    def sequence_softmax(self, mat):
+        nmat = Variable(torch.randn(mat.size()))
+        for i in range(mat.size(1)):
+            nmat[:,i,:] = self.softmax(mat[:,i,:])
+        return nmat
