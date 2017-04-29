@@ -34,7 +34,7 @@ class SquadModel(nn.Module):
         self.hidden = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         # since we are using q_align and p_emb as p_star we have input as 2*emb_dim
         # num_layers = 2 and dropout = 0.1
-        self.gru = nn.LSTM(2 * config.emb_dim, config.hidden_dim, config.num_layers, 0.1, bidirectional=True)
+        self.gru = nn.LSTM(2 * config.emb_dim, config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
 
 
         parameters = ifilter(lambda p: p.requires_grad, self.parameters())
