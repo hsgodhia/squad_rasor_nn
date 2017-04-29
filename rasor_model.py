@@ -2,7 +2,9 @@ import numpy as np
 import torch
 import pdb
 import torch.nn as nn
+import torch.nn.init as init
 from torch.autograd import Variable
+from itertools import ifilter
 
 class SquadModel(nn.Module):
     # check if this vocab_size contains unkown, START, END token as well?
@@ -28,11 +30,16 @@ class SquadModel(nn.Module):
         self.relu = nn.ReLU()
         self.softmax = nn.Softmax()
         self.logsoftmax = nn.LogSoftmax()
-
+        self.dropout = nn.Dropout(0.2)
         self.hidden = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         # since we are using q_align and p_emb as p_star we have input as 2*emb_dim
         # num_layers = 2 and dropout = 0.1
         self.gru = nn.LSTM(2 * config.emb_dim, config.hidden_dim, config.num_layers, 0.1, bidirectional=True)
+
+
+        parameters = ifilter(lambda p: p.requires_grad, self.parameters())
+        for p in parameters:
+            self.init_param(p)
 
     def forward(self, config, p, p_mask, p_lens, q, q_mask, q_lens):
         #all these inputs are of type autograd Variable
@@ -55,9 +62,14 @@ class SquadModel(nn.Module):
         p_star_parts = [p_emb]  # its a list,later we concatenate them into a tensor/variable
         p_star_dim = config.emb_dim
 
+        #basiclly bring down the p_emb to ff_dim from embedding_dim, apply ReLU to it as well
         q_align_ff_p = self.sequence_linear_layer(self.ff_align, p_emb)  # (max_p_len, batch_size, ff_dim)
         q_align_ff_q = self.sequence_linear_layer(self.ff_align, q_emb)  # (max_q_len, batch_size, ff_dim)
 
+        #randomly with probability 0.2 zero out some nodes
+        q_align_ff_p = self.dropout(q_align_ff_p)
+        q_align_ff_q = self.dropout(q_align_ff_q)
+        
         q_align_ff_p_shuffled = q_align_ff_p.permute(1, 0, 2)  # (batch_size, max_p_len, ff_dim)
         q_align_ff_q_shuffled = q_align_ff_q.permute(1, 2, 0)  # (batch_size, ff_dim, max_q_len)
 
@@ -114,6 +126,12 @@ class SquadModel(nn.Module):
 		h_0 (num_layers * num_directions, batch, hidden_size): tensor containing the initial hidden state for each element in the batch.
 		"""
         return (Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)), Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)))
+
+    def init_param(self, param):
+        if len(param.size()) < 2:
+            init.uniform(param)
+        else:            
+            init.xavier_uniform(param)
 
     def _span_sums(self, p_lens, stt, end, max_p_len, batch_size, dim, max_ans_len):
         # stt 		(max_p_len, batch_size, dim)

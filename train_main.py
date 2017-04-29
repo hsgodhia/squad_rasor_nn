@@ -194,6 +194,7 @@ def _trn_epoch(epochid):
         if b % 200 == 0:
             #implementing a learning rate decay
             lr = lr * 0.95
+            parameters = ifilter(lambda p: p.requires_grad, model.parameters())
             optimizer = optim.Adam(parameters, lr)
         #save the model every so often
 
