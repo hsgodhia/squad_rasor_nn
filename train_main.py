@@ -148,6 +148,10 @@ def _trn_epoch(model, epochid, batchid = 0):
             continue
 
         batch_idxs = valid_qtn_idxs[s:min(s + config.batch_size, num_samples)]
+        if batch_idxs.size != config.batch_size:
+            #in the last iteration if the size of the vector is not as batch size
+            #GRU and LSTM layer would fail, since hidden state is initialized with fixed batch_size
+            continue
         qtn_idxs = torch.from_numpy(batch_idxs).long()
         ctx_idxs = dataset_qtn_ctx_idxs[qtn_idxs].long()  # (batch_size,)
         p_lens = dataset_ctx_lens[ctx_idxs]  # (batch_size,)
@@ -227,7 +231,7 @@ def main():
 
 def get_last_batch():
     #since its possible that the last line was partly pasted to stdout
-    proc = subprocess.Popen(['tail', '-2', 'program.out'], stdout=subprocess.PIPE)
+    proc = subprocess.Popen(['tail', '-2', 'program_round1.out'], stdout=subprocess.PIPE)
     val = proc.stdout.read().split('\n')[0]
     batchid = int(val.strip().split(':')[-1])
     return batchid
