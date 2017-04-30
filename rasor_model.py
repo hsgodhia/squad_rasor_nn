@@ -114,7 +114,7 @@ class SquadModel(nn.Module):
     #input has dimension (batch_size, max_p_len*ans_len, ff_dim)
     def sequence_linear_layer2(self, layer, inp):
         bat_size, classes, inp_dim = inp.size()
-        inp = inp.contiguous.view(-1, inp_dim)
+        inp = inp.contiguous().view(-1, inp_dim)
         out = layer(inp)
         out = out.view(bat_size, classes, -1)
         return out

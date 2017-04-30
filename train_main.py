@@ -5,6 +5,7 @@ from itertools import ifilter
 import sys
 import logging, pdb
 import time
+import os.path
 from torch.autograd import Variable
 import argparse
 import torch
@@ -13,6 +14,7 @@ from evaluate11 import metric_max_over_ground_truths, exact_match_score, f1_scor
 from base.utils import set_up_logger
 from utils import EpochResult, format_epoch_results, plot_epoch_results
 from reader import get_data, construct_answer_hat, write_test_predictions
+import subprocess
 
 class Config(object):
     def __init__(self, compared=[], **kwargs):
@@ -32,13 +34,6 @@ class Config(object):
     def __repr__(self):
         ks = sorted(k for k in self.__dict__ if k not in ['name'])
         return '\n'.join('{:<30s}{:<s}'.format(k, str(self.__dict__[k])) for k in ks)
-
-config = Config()
-base_filename = config.name + '_cfg' + str(0)
-logger = set_up_logger('logs/' + base_filename + '.log')
-title = '{}: {}'.format(__file__, config.name)
-logger.info('START ' + title + '\n\n{}\n'.format(config))
-data = get_data(config, train=True)
 
 def _gpu_dataset(name, dataset, config):
     if dataset:
@@ -92,6 +87,14 @@ def _gpu_answers(name, anss, max_ans_len):
     gpu_ans_ends = torch.from_numpy(ans_ends_val)
     return gpu_anss, gpu_ans_stts, gpu_ans_ends
 
+config = Config()
+base_filename = config.name + '_cfg' + str(0)
+logger = set_up_logger('logs/' + base_filename + '.log')
+title = '{}: {}'.format(__file__, config.name)
+logger.info('START ' + title + '\n\n{}\n'.format(config))
+data = get_data(config, train=True)
+
+
 emb_val = data.word_emb_data.word_emb  # (voc size, emb_dim)
 first_known_word = data.word_emb_data.first_known_word
 assert config.emb_dim == emb_val.shape[1]
@@ -114,7 +117,6 @@ dataset_anss = trn_anss.long()
 dataset_ans_stts = trn_ans_stts.long()
 dataset_ans_ends = trn_ans_ends.long()
 
-model = SquadModel(config, emb)
 
 """
 uncomment this to print model parameters and check if model correctly made
@@ -128,11 +130,12 @@ for param in list(model.parameters()):
 
 loss_function = nn.NLLLoss()
 
-def _trn_epoch(epochid):
-    # indices of questions which have a valid answer
-    valid_qtn_idxs = np.flatnonzero(data.trn.vectorized.qtn_ans_inds).astype(np.int32)
-    # todo shuffle in numpy np_rng.shuffle(valid_qtn_idxs)
-    num_samples = valid_qtn_idxs.size
+# indices of questions which have a valid answer
+valid_qtn_idxs = np.flatnonzero(data.trn.vectorized.qtn_ans_inds).astype(np.int32)
+num_samples = valid_qtn_idxs.size
+# probably shuffle the sample each epoch
+
+def _trn_epoch(model, epochid, batchid = 0):
     batch_sizes = []
     losses = []
     accs = []
@@ -140,6 +143,9 @@ def _trn_epoch(epochid):
     #TODO: change this  to iterate over all samples, now we limit to 25% of the sample size
     ss = range(0, num_samples, config.batch_size)
     for b, s in enumerate(ss, 1):
+        if b < batchid:
+            #skip all batchids less than the given batchid
+            continue
 
         batch_idxs = valid_qtn_idxs[s:min(s + config.batch_size, num_samples)]
         qtn_idxs = torch.from_numpy(batch_idxs).long()
@@ -204,9 +210,23 @@ def _trn_epoch(epochid):
     return trn_loss, trn_acc
 
 def main():
+    model = SquadModel(config, emb)
+    #check for old model if present
+    if os.path.isfile('./model.pth'):
+        model.load_state_dict(torch.load('./model.pth'))
+        #load the model from here instead 
+        batchid = get_last_batch() + 1
+    
     #Training
     for epoch in range(20):
-        trn_loss, trn_acc = _trn_epoch(epoch)
+        trn_loss, trn_acc = _trn_epoch(model, epoch, batchid)
         logger.info("after epoch: {} avg. loss: {} avg. acc: {} ".format(epoch, trn_loss, trn_acc))
+
+def get_last_batch():
+    #since its possible that the last line was partly pasted to stdout
+    proc = subprocess.Popen(['tail', '-2', 'program.out'], stdout=subprocess.PIPE)
+    val = proc.stdout.read().split('\n')[0]
+    batchid = int(val.strip().split(':')[-1])
+    return batchid
 
 main()
