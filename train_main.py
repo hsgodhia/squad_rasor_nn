@@ -15,6 +15,7 @@ from base.utils import set_up_logger
 from utils import EpochResult, format_epoch_results, plot_epoch_results
 from reader import get_data, construct_answer_hat, write_test_predictions
 import subprocess
+from signal import *
 
 class Config(object):
     def __init__(self, compared=[], **kwargs):
@@ -134,11 +135,22 @@ loss_function = nn.NLLLoss()
 valid_qtn_idxs = np.flatnonzero(data.trn.vectorized.qtn_ans_inds).astype(np.int32)
 num_samples = valid_qtn_idxs.size
 # probably shuffle the sample each epoch
+batch_sizes = []
+losses = []
+accs = []
+
+def clean():
+    with open("meta_data.txt") as fp:
+        avg_trn_loss = np.average(losses)
+        avg_trn_acc = np.average(accs)
+        fp.write("avg_loss: {} avg_acc: {} \n".format(avg_trn_loss, avg_trn_acc))
+        torch.save(model.state_dict(), './model.pth')
+        print("dying done cleanup")
+
+signal.signal(signal.SIGKILL, clean)
 
 def _trn_epoch(model, epochid, batchid = 0):
-    batch_sizes = []
-    losses = []
-    accs = []
+    fp = open("meta_data.txt", "a")
     lr = 0.001
     #TODO: change this  to iterate over all samples, now we limit to 25% of the sample size
     ss = range(0, num_samples, config.batch_size)
@@ -152,6 +164,7 @@ def _trn_epoch(model, epochid, batchid = 0):
             #in the last iteration if the size of the vector is not as batch size
             #GRU and LSTM layer would fail, since hidden state is initialized with fixed batch_size
             continue
+
         qtn_idxs = torch.from_numpy(batch_idxs).long()
         ctx_idxs = dataset_qtn_ctx_idxs[qtn_idxs].long()  # (batch_size,)
         p_lens = dataset_ctx_lens[ctx_idxs]  # (batch_size,)
@@ -207,6 +220,7 @@ def _trn_epoch(model, epochid, batchid = 0):
             optimizer = optim.Adam(parameters, lr)
 
         if b % 100 == 0:
+
             logger.info("start saving model {}".format(time.time()))
             #save frequency, creates a 140MB file
             torch.save(model.state_dict(), './model.pth')
@@ -227,6 +241,7 @@ def main():
     #Training
     for epoch in range(20):
         trn_loss, trn_acc = _trn_epoch(model, epoch, batchid)
+        batchid = 0
         logger.info("after epoch: {} avg. loss: {} avg. acc: {} ".format(epoch, trn_loss, trn_acc))
 
 def get_last_batch():
