@@ -190,7 +190,7 @@ def _trn_epoch(epochid):
         
         logger.info("loss: {} accuracy:{} epochID: {} batchID:{}".format(loss.data[0], acc.data[0], epochid, b))
 
-        if b % 8000 == 0:
+        if b % 700 == 0:
             #implementing a learning rate decay
             lr = lr * 0.95
             parameters = ifilter(lambda p: p.requires_grad, model.parameters())

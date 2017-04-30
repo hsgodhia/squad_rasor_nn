@@ -34,8 +34,8 @@ class SquadModel(nn.Module):
         self.hidden = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         # since we are using q_align and p_emb as p_star we have input as 2*emb_dim
         # num_layers = 2 and dropout = 0.1
-        self.gru = nn.LSTM(2 * config.emb_dim, config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
-
+        self.gru = nn.GRU(input_size = 2 * config.emb_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
+        #change init_hidden when you change this gru/lstm
 
         parameters = ifilter(lambda p: p.requires_grad, self.parameters())
         for p in parameters:
@@ -104,19 +104,28 @@ class SquadModel(nn.Module):
 
         # (batch_size, max_p_len*max_ans_len, ff_dim), (batch_size, max_p_len*max_ans_len)
         span_lin_reshaped, span_masks_reshaped = self._span_sums(p_lens, p_stt_lin, p_end_lin, max_p_len, config.batch_size, config.ff_dim, config.max_ans_len)
-
+        #FFNN(h_a) also contains a relu so we are apply that to the whole span_sum
         span_ff_reshaped = self.relu(span_lin_reshaped)  # (batch_size, max_p_len*max_ans_len, ff_dim)
-        span_scores_reshaped = self.sequence_linear_layer(self.w_a, span_ff_reshaped)  # (batch_size, max_p_len*max_ans_len)
-
+        
+        span_scores_reshaped = self.sequence_linear_layer2(self.w_a, span_ff_reshaped)  # (batch_size, max_p_len*max_ans_len)
         final_span_scores = span_masks_reshaped * span_scores_reshaped
         return self.logsoftmax(final_span_scores)
+
+    #input has dimension (batch_size, max_p_len*ans_len, ff_dim)
+    def sequence_linear_layer2(self, layer, inp):
+        bat_size, classes, inp_dim = inp.size()
+        inp = inp.contiguous.view(-1, inp_dim)
+        out = layer(inp)
+        out = out.view(bat_size, classes, -1)
+        return out
 
     # input has dimension (sequence_len, batch_size, input_dim)
     # ayush's idea to optimize this is to use a view, data is read/unread rowise
     def sequence_linear_layer(self, layer, inp):
         seq_len, bat_size, inp_dim = inp.size()
+        #contiguous is called to make the backend memory storage of the tensor as a contigous storage
+        # instead of storage with holes
         inp = inp.contiguous().view(-1, inp_dim)
-
         out = self.relu(layer(inp))
         out = out.view(seq_len, bat_size, -1)
         return out
@@ -125,7 +134,7 @@ class SquadModel(nn.Module):
         """
 		h_0 (num_layers * num_directions, batch, hidden_size): tensor containing the initial hidden state for each element in the batch.
 		"""
-        return (Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)), Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)))
+        return (Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)))#, Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)))
 
     def init_param(self, param):
         if len(param.size()) < 2:
