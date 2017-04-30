@@ -202,8 +202,11 @@ def _trn_epoch(model, epochid, batchid = 0):
             parameters = ifilter(lambda p: p.requires_grad, model.parameters())
             optimizer = optim.Adam(parameters, lr)
 
+        if b % 100 == 0:
+            logger.info("start saving model {}".format(time.time()))
             #save frequency, creates a 140MB file
             torch.save(model.state_dict(), './model.pth')
+            logger.info("model saved {}".format(time.time()))
 
     trn_loss = np.average(losses)
     trn_acc = np.average(accs)
