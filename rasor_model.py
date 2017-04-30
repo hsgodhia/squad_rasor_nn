@@ -112,14 +112,14 @@ class SquadModel(nn.Module):
         return self.logsoftmax(final_span_scores)
 
     # input has dimension (sequence_len, batch_size, input_dim)
+    # ayush's idea to optimize this is to use a view, data is read/unread rowise
     def sequence_linear_layer(self, layer, inp):
-        dims = inp.size()
-        out = []
-        for i in range(0,dims[0]):
-            inp_i = inp[i, :, :]
-            out_i = self.relu(layer(inp_i))
-            out.append(out_i)
-        return torch.stack(out, 0)
+        seq_len, bat_size, inp_dim = inp.size()
+        inp = inp.contiguous().view(-1, inp_dim)
+
+        out = self.relu(layer(inp))
+        out = out.view(seq_len, bat_size, -1)
+        return out
 
     def init_hidden(self, num_layers, hidden_dim, batch_size):
         """

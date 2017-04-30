@@ -136,10 +136,9 @@ def _trn_epoch(epochid):
     batch_sizes = []
     losses = []
     accs = []
-    samples_per_sec = []
     lr = 0.001
     #TODO: change this  to iterate over all samples, now we limit to 25% of the sample size
-    ss = range(0, num_samples//4, config.batch_size)
+    ss = range(0, num_samples, config.batch_size)
     for b, s in enumerate(ss, 1):
 
         batch_idxs = valid_qtn_idxs[s:min(s + config.batch_size, num_samples)]
@@ -179,16 +178,16 @@ def _trn_epoch(epochid):
         optimizer = optim.Adam(parameters, lr)
         loss = loss_function(scores, a)
         
-
         _, a_hats = torch.max(scores, 1)
         a_hats = a_hats.squeeze(1)
         acc = torch.eq(a_hats, a).float().mean()
+        
         loss.backward()
         optimizer.step()
 
-        samples_per_sec.append(len(batch_idxs) / (time.time() - start_time))
-
-        losses.append(loss)
+        losses.append(loss.data[0])
+        accs.append(acc.data[0])
+        
         logger.info("loss: {} accuracy:{} epochID: {} batchID:{}".format(loss.data[0], acc.data[0], epochid, b))
 
         if b % 8000 == 0:
@@ -196,16 +195,18 @@ def _trn_epoch(epochid):
             lr = lr * 0.95
             parameters = ifilter(lambda p: p.requires_grad, model.parameters())
             optimizer = optim.Adam(parameters, lr)
-        #save the model every so often
 
-    trn_loss = np.average(losses, weights=batch_sizes)
-    #trn_acc = np.average(accs, weights=batch_sizes)
-    trn_samples_per_sec = np.average(samples_per_sec, weights=batch_sizes)
-    return trn_loss, trn_samples_per_sec
+            #save frequency, creates a 140MB file
+            torch.save(model.state_dict(), './model.pth')
+
+    trn_loss = np.average(losses)
+    trn_acc = np.average(accs)
+    return trn_loss, trn_acc
 
 def main():
     #Training
     for epoch in range(20):
-        _trn_epoch(epoch)
+        trn_loss, trn_acc = _trn_epoch(epoch)
+        logger.info("after epoch: {} avg. loss: {} avg. acc: {} ".format(epoch, trn_loss, trn_acc))
 
 main()
