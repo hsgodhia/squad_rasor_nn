@@ -30,7 +30,7 @@ class SquadModel(nn.Module):
         self.hidden = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         # since we are using q_align and p_emb as p_star we have input as 2*emb_dim
         # num_layers = 2 and dropout = 0.1
-        self.gru = nn.GRU(input_size = 2 * config.emb_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
+        self.gru = nn.LSTM(input_size = 2 * config.emb_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
         #change init_hidden when you change this gru/lstm
 
         parameters = ifilter(lambda p: p.requires_grad, self.parameters())
@@ -138,7 +138,7 @@ class SquadModel(nn.Module):
         zero_t = torch.zeros(num_layers * 2, batch_size, hidden_dim)
         if torch.cuda.is_available():
             zero_t = zero_t.cuda(0)
-        return (Variable(zero_t))#, Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)))
+        return (Variable(zero_t), Variable(zero_t))
 
     def init_param(self, param):
         if len(param.size()) < 2:

@@ -8,6 +8,7 @@ import time
 import os.path
 from torch.autograd import Variable
 import argparse
+import random
 import torch
 import numpy as np
 from evaluate11 import metric_max_over_ground_truths, exact_match_score, f1_score
@@ -160,16 +161,19 @@ def clean():
         torch.save(model.state_dict(), './model.pth')
 
 signal.signal(signal.SIGTERM, clean)
+np_rng = np.random.RandomState(config.seed // 2)
 
-def _trn_epoch(model, epochid, batchid = 0):
-    lr = 0.001
+def _trn_epoch(model, epochid):
+    lr = 0.001    
+    if epochid % 10 == 0:
+        #implementing a learning rate decay
+        lr = lr * 0.95
+
+    np_rng.shuffle(valid_qtn_idxs)
     parameters = ifilter(lambda p: p.requires_grad, model.parameters())
     optimizer = optim.Adam(parameters, lr)
     ss = range(0, num_samples, config.batch_size)
     for b, s in enumerate(ss, 1):
-        if b < batchid:
-            #skip all batchids less than the given batchid
-            continue
 
         batch_idxs = valid_qtn_idxs[s:min(s + config.batch_size, num_samples)]
         if batch_idxs.size != config.batch_size:
@@ -226,16 +230,10 @@ def _trn_epoch(model, epochid, batchid = 0):
         losses.append(loss.data[0])
         accs.append(acc.data[0])
         
-        if b % 1100 == 0:
-            #implementing a learning rate decay
-            lr = lr * 0.95
-            parameters = ifilter(lambda p: p.requires_grad, model.parameters())
-            optimizer = optim.Adam(parameters, lr)
-
-        if b % 10 == 0:
+        if b % 30 == 0:
             logger.info("loss: {} accuracy:{} epochID: {} batchID:{}".format(loss.data[0], acc.data[0], epochid, b))
 
-        if b % 100 == 0:
+        if b % 500 == 0:
             #save frequency, creates a 140MB file
             torch.save(model.state_dict(), './model.pth')
 
@@ -247,24 +245,21 @@ def main():
     model = SquadModel(config, emb)
     if torch.cuda.is_available():
         model = model.cuda()
+
     #check for old model if present
     if os.path.isfile('./model.pth'):
         model.load_state_dict(torch.load('./model.pth'))
         #load the model from here instead 
-        batchid = get_last_batch() + 1
-    else:
-        batchid = 0
+    
     #Training
-    for epoch in range(20):
-        trn_loss, trn_acc = _trn_epoch(model, epoch, batchid)
-        batchid = 0
+    for epoch in range(21):
+        trn_loss, trn_acc = _trn_epoch(model, epoch)
         logger.info("after epoch: {} avg. loss: {} avg. acc: {} ".format(epoch, trn_loss, trn_acc))
 
-def get_last_batch():
-    #since its possible that the last line was partly pasted to stdout
-    proc = subprocess.Popen(['tail', '-2', 'program_round1.out'], stdout=subprocess.PIPE)
-    val = proc.stdout.read().split('\n')[0]
-    batchid = int(val.strip().split(':')[-1])
-    return batchid
+    with open("meta_data.txt") as fp:
+        avg_trn_loss = np.average(losses)
+        avg_trn_acc = np.average(accs)
+        fp.write("across epooch average avg_loss: {} avg_acc: {} \n".format(avg_trn_loss, avg_trn_acc))
+    torch.save(model.state_dict(), './model.pth')
 
 main()
