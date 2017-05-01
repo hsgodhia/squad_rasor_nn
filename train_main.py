@@ -119,7 +119,6 @@ dataset_ans_stts = trn_ans_stts.long()
 dataset_ans_ends = trn_ans_ends.long()
 
 if torch.cuda.is_available():
-    print("gpu pe dauhdha!")
     gpu_avail = torch.cuda.device_count()
     dataset_ctxs = trn_ctxs.long().cuda(0)
     dataset_ctx_masks = trn_ctx_masks.long().cuda(0)
@@ -142,7 +141,6 @@ def print_param(mdoel):
         print(param.data.size())
 
 loss_function = nn.NLLLoss()
-
 if torch.cuda.is_available():
     loss_function = loss_function.cuda(0)
 
@@ -196,8 +194,6 @@ def _trn_epoch(model, epochid, batchid = 0):
         p_mask = dataset_ctx_masks[ctx_idxs][:, :max_p_len].transpose(0, 1).long()  # (max_p_len, batch_size)
         if torch.cuda.is_available():
             p_mask = p_mask.cuda(0)        
-            p = p.cuda(0)
-            p_lens = p_lens.cuda(0)
 
         q_lens = dataset_qtn_lens[qtn_idxs]  # (batch_size,)
         max_q_len = q_lens.max()
@@ -205,8 +201,6 @@ def _trn_epoch(model, epochid, batchid = 0):
         q_mask = dataset_qtn_masks[qtn_idxs][:, :max_q_len].transpose(0, 1).long()  # (max_q_len, batch_size)
         if torch.cuda.is_available():
             q_mask = q_mask.cuda(0)
-            q = q.cuda(0)
-            q_lens = q_lens.cuda(0)
 
         a = Variable(dataset_anss[qtn_idxs])  # (batch_size,)
         #a_stt = dataset_ans_stts[qtn_idxs]  # (batch_size,)
@@ -251,6 +245,8 @@ def _trn_epoch(model, epochid, batchid = 0):
 
 def main():
     model = SquadModel(config, emb)
+    if torch.cuda.is_available():
+        model = model.cuda()
     #check for old model if present
     if os.path.isfile('./model.pth'):
         model.load_state_dict(torch.load('./model.pth'))

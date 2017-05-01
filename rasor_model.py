@@ -14,51 +14,23 @@ class SquadModel(nn.Module):
         self.embed = nn.Embedding(config.vocab_size, config.emb_dim)
         self.embed.weight.requires_grad = False  # do not propagate into the pre-trained word embeddings
         self.embed.weight.data.copy_(emb_data)
-        if torch.cuda.is_available():
-            self.embed = self.embed.cuda(0)
-
         # used for eq(6) does FFNN(p_i)*FFNN(q_j)
         self.ff_align = nn.Linear(config.emb_dim, config.ff_dim)
-        if torch.cuda.is_available():
-            self.ff_align = self.ff_align.cuda(0)
         # used for eq(2) does FFNN(h_a) in a simplified form so that it can be re-used,
         # note: h_a = [u,v] where u and v are start and end words respectively
         # we have 2*config.hidden_dim since we are using a bi-directional LSTM
         self.p_end_ff = nn.Linear(2 * config.hidden_dim, config.ff_dim)
-        if torch.cuda.is_available():
-            self.p_end_ff = self.p_end_ff.cuda(0)
-
         self.p_start_ff = nn.Linear(2 * config.hidden_dim, config.ff_dim)
-        if torch.cuda.is_available():
-            self.p_start_ff = self.p_start_ff.cuda(0)
-
         # used for eq(2) plays the role of w_a
         self.w_a = nn.Linear(config.ff_dim, 1, bias=False)
-        if torch.cuda.is_available():
-            self.w_a = self.w_a.cuda(0)
-
         self.relu = nn.ReLU()
-        if torch.cuda.is_available():
-            self.relu = self.relu.cuda(0)
-
         self.softmax = nn.Softmax()
-        if torch.cuda.is_available():
-            self.softmax = self.softmax.cuda(0)
-        
         self.logsoftmax = nn.LogSoftmax()
-        if torch.cuda.is_available():
-            self.logsoftmax = self.logsoftmax.cuda(0)
-
         self.dropout = nn.Dropout(0.2)
-        if torch.cuda.is_available():
-            self.dropout = self.dropout.cuda(0)
-
         self.hidden = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         # since we are using q_align and p_emb as p_star we have input as 2*emb_dim
         # num_layers = 2 and dropout = 0.1
         self.gru = nn.GRU(input_size = 2 * config.emb_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
-        if torch.cuda.is_available():
-            self.gru = self.gru.cuda(0)
         #change init_hidden when you change this gru/lstm
 
         parameters = ifilter(lambda p: p.requires_grad, self.parameters())
@@ -215,7 +187,11 @@ class SquadModel(nn.Module):
 
     #q_align_weights = self.softmax(q_align_mask_scores)  # (batch_size, max_p_len, max_q_len)
     def sequence_softmax(self, mat):
-        nmat = Variable(torch.randn(mat.size()))
+        rand_v = torch.randn(mat.size())
+        if torch.cuda.is_available():
+            rand_v = rand_v.cuda(0)
+
+        nmat = Variable(rand_v)
         for i in range(mat.size(1)):
             nmat[:,i,:] = self.softmax(mat[:,i,:])
         return nmat
