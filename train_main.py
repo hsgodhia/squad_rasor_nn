@@ -121,7 +121,6 @@ dataset_ans_ends = trn_ans_ends.long()
 if torch.cuda.is_available():
     print("gpu pe dauhdha!")
     gpu_avail = torch.cuda.device_count()
-    print(gpu_avail)
     dataset_ctxs = trn_ctxs.long().cuda(0)
     dataset_ctx_masks = trn_ctx_masks.long().cuda(0)
     dataset_ctx_lens = trn_ctx_lens.long().cuda(0)
@@ -210,19 +209,18 @@ def _trn_epoch(model, epochid, batchid = 0):
 
         a = Variable(dataset_anss[qtn_idxs])  # (batch_size,)
         #a_stt = dataset_ans_stts[qtn_idxs]  # (batch_size,)
-        #a_end = dataset_ans_ends[qtn_idxs]  # (batch_size,)
+        #a_end = dataset_ans_ends[qtn_idxs]  # (batch_size,)()
 
         batch_sizes.append(len(batch_idxs))
 
         start_time = time.time()
         
-        model.zero_grad()
+        model.zero_grad().cuda(0)
         model.hidden = model.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
 
         scores = model(config, Variable(p, requires_grad=False), Variable(p_mask, requires_grad=False),
                        Variable(p_lens, requires_grad=False), Variable(q, requires_grad=False),
                        Variable(q_mask, requires_grad=False), Variable(q_lens, requires_grad=False))
-
 
         loss = loss_function(scores, a)
         _, a_hats = torch.max(scores, 1)
