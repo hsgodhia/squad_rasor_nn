@@ -133,7 +133,10 @@ class SquadModel(nn.Module):
         """
 		h_0 (num_layers * num_directions, batch, hidden_size): tensor containing the initial hidden state for each element in the batch.
 		"""
-        return (Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)))#, Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)))
+        zero_t = torch.zeros(num_layers * 2, batch_size, hidden_dim)
+        if torch.cuda.is_available():
+            zero_t = zero_t.cuda(0)
+        return (Variable(zero_t))#, Variable(torch.zeros(num_layers * 2, batch_size, hidden_dim)))
 
     def init_param(self, param):
         if len(param.size()) < 2:
@@ -156,8 +159,11 @@ class SquadModel(nn.Module):
         #pdb.set_trace()
         end_idxs_flat = end_idxs.view(-1, 1).squeeze(1)  # (max_p_len*max_ans_len, )
         # note: this is not modeled as tensor of size (SZ, 1) but vector of SZ size
+        zero_t = torch.zeros(max_ans_len - 1, batch_size, dim)
+        if torch.cuda.is_available():
+            zero_t = zero_t.cuda(0)
 
-        end_padded = torch.cat((end, Variable(torch.zeros(max_ans_len - 1, batch_size, dim))), 0)
+        end_padded = torch.cat((end, Variable(zero_t)), 0)
         end_structed = end_padded[end_idxs_flat]  # (max_p_len*max_ans_len, batch_size, dim)
         end_structed = end_structed.view(max_p_len, max_ans_len, batch_size, dim)
         stt_shuffled = stt.unsqueeze(1)  # stt (max_p_len, 1, batch_size, dim)
