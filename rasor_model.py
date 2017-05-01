@@ -52,7 +52,7 @@ class SquadModel(nn.Module):
         self.dropout = nn.Dropout(0.2)
         if torch.cuda.is_available():
             self.dropout.cuda(0)
-            
+
         self.hidden = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         # since we are using q_align and p_emb as p_star we have input as 2*emb_dim
         # num_layers = 2 and dropout = 0.1
@@ -106,15 +106,21 @@ class SquadModel(nn.Module):
 
         q_mask_shuffled = torch.unsqueeze(q_mask, 2)  # results in (max_q_len, batch_size, 1)
         q_mask_shuffled = q_mask_shuffled.permute(1, 2, 0)  # (batch_size, 1, max_q_len)
-        pq_mask = torch.bmm(p_mask_shuffled, q_mask_shuffled)  # (batch_size, max_p_len, max_q_len)
+        pq_mask = torch.bmm(p_mask_shuffled.cpu(), q_mask_shuffled.cpu())  # (batch_size, max_p_len, max_q_len)
         pq_mask = pq_mask.float()
+        if torch.cuda.is_available():
+            pq_mask = pq_mask.cuda(0)
+
         q_align_mask_scores = q_align_scores * pq_mask  # elementwise matrix multiplication
         #not all (i,j) pairs of indexes are valid so we mask the invalid ones out
         q_align_weights = self.sequence_softmax(q_align_mask_scores)  #softmax across the q_len index=2, this is what we do in eqn(7)
         q_emb_shuffled = q_emb.permute(1, 0, 2)  # (batch_size, max_q_len, emb_dim)
 
-        q_align = torch.bmm(q_align_weights, q_emb_shuffled)  # (batch_size, max_p_len, emb_dim)
+        q_align = torch.bmm(q_align_weights.cpu(), q_emb_shuffled.cpu())  # (batch_size, max_p_len, emb_dim)
+        
         q_align_shuffled = q_align.permute(1, 0, 2)  # (max_p_len, batch_size, emd_dim)
+        if torch.cuda.is_available():
+            q_align_shuffled = q_align_shuffled.cuda(0)
 
         p_star_parts.append(q_align_shuffled)
         p_star_dim += config.emb_dim
@@ -186,6 +192,7 @@ class SquadModel(nn.Module):
         zero_t = torch.zeros(max_ans_len - 1, batch_size, dim)
         if torch.cuda.is_available():
             zero_t = zero_t.cuda(0)
+            end_idxs_flat = end_idxs_flat.cuda(0)
 
         end_padded = torch.cat((end, Variable(zero_t)), 0)
         end_structed = end_padded[end_idxs_flat]  # (max_p_len*max_ans_len, batch_size, dim)

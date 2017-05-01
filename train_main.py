@@ -144,6 +144,9 @@ def print_param(mdoel):
 
 loss_function = nn.NLLLoss()
 
+if torch.cuda.is_available():
+    loss_function = loss_function.cuda(0)
+
 # indices of questions which have a valid answer
 valid_qtn_idxs = np.flatnonzero(data.trn.vectorized.qtn_ans_inds).astype(np.int32)
 num_samples = valid_qtn_idxs.size
@@ -163,6 +166,11 @@ signal.signal(signal.SIGTERM, clean)
 
 def _trn_epoch(model, epochid, batchid = 0):
     lr = 0.001
+    parameters = ifilter(lambda p: p.requires_grad, model.parameters())
+    optimizer = optim.Adam(parameters, lr)
+    if torch.cuda.is_available():
+        optimizer = optimizer.cuda(0)
+
     ss = range(0, num_samples, config.batch_size)
     for b, s in enumerate(ss, 1):
         if b < batchid:
@@ -215,12 +223,8 @@ def _trn_epoch(model, epochid, batchid = 0):
                        Variable(p_lens, requires_grad=False), Variable(q, requires_grad=False),
                        Variable(q_mask, requires_grad=False), Variable(q_lens, requires_grad=False))
 
-        parameters = ifilter(lambda p: p.requires_grad, model.parameters())
-        #pdb.set_trace()
 
-        optimizer = optim.Adam(parameters, lr)
         loss = loss_function(scores, a)
-        
         _, a_hats = torch.max(scores, 1)
         a_hats = a_hats.squeeze(1)
         acc = torch.eq(a_hats, a).float().mean()
@@ -236,6 +240,8 @@ def _trn_epoch(model, epochid, batchid = 0):
             lr = lr * 0.95
             parameters = ifilter(lambda p: p.requires_grad, model.parameters())
             optimizer = optim.Adam(parameters, lr)
+            if torch.cuda.is_available():
+                optimizer = optimizer.cuda(0)
 
         if b % 10 == 0:
             logger.info("loss: {} accuracy:{} epochID: {} batchID:{}".format(loss.data[0], acc.data[0], epochid, b))
