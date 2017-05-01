@@ -167,9 +167,6 @@ def _trn_epoch(model, epochid, batchid = 0):
     lr = 0.001
     parameters = ifilter(lambda p: p.requires_grad, model.parameters())
     optimizer = optim.Adam(parameters, lr)
-    if torch.cuda.is_available():
-        optimizer = optimizer.cuda(0)
-
     ss = range(0, num_samples, config.batch_size)
     for b, s in enumerate(ss, 1):
         if b < batchid:
@@ -199,6 +196,8 @@ def _trn_epoch(model, epochid, batchid = 0):
         p_mask = dataset_ctx_masks[ctx_idxs][:, :max_p_len].transpose(0, 1).long()  # (max_p_len, batch_size)
         if torch.cuda.is_available():
             p_mask = p_mask.cuda(0)        
+            p = p.cuda(0)
+            p_lens = p_lens.cuda(0)
 
         q_lens = dataset_qtn_lens[qtn_idxs]  # (batch_size,)
         max_q_len = q_lens.max()
@@ -206,16 +205,16 @@ def _trn_epoch(model, epochid, batchid = 0):
         q_mask = dataset_qtn_masks[qtn_idxs][:, :max_q_len].transpose(0, 1).long()  # (max_q_len, batch_size)
         if torch.cuda.is_available():
             q_mask = q_mask.cuda(0)
+            q = q.cuda(0)
+            q_lens = q_lens.cuda(0)
 
         a = Variable(dataset_anss[qtn_idxs])  # (batch_size,)
         #a_stt = dataset_ans_stts[qtn_idxs]  # (batch_size,)
         #a_end = dataset_ans_ends[qtn_idxs]  # (batch_size,)()
 
         batch_sizes.append(len(batch_idxs))
-
         start_time = time.time()
-        
-        model.zero_grad().cuda(0)
+        model.zero_grad()
         model.hidden = model.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
 
         scores = model(config, Variable(p, requires_grad=False), Variable(p_mask, requires_grad=False),
@@ -238,8 +237,6 @@ def _trn_epoch(model, epochid, batchid = 0):
             lr = lr * 0.95
             parameters = ifilter(lambda p: p.requires_grad, model.parameters())
             optimizer = optim.Adam(parameters, lr)
-            if torch.cuda.is_available():
-                optimizer = optimizer.cuda(0)
 
         if b % 10 == 0:
             logger.info("loss: {} accuracy:{} epochID: {} batchID:{}".format(loss.data[0], acc.data[0], epochid, b))
@@ -259,7 +256,8 @@ def main():
         model.load_state_dict(torch.load('./model.pth'))
         #load the model from here instead 
         batchid = get_last_batch() + 1
-    
+    else:
+        batchid = 0
     #Training
     for epoch in range(20):
         trn_loss, trn_acc = _trn_epoch(model, epoch, batchid)
