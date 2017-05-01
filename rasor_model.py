@@ -96,8 +96,6 @@ class SquadModel(nn.Module):
         p_star_dim += config.emb_dim
 
         p_star = torch.cat(p_star_parts, 2)  # (max_p_len, batch_size, p_star_dim)
-        print("p_star", p_star.size())
-        print(self.hidden.size())
         p_level_h, self.hidden = self.gru(p_star, self.hidden)  # (max_p_len, batch_size, 2*hidden_dim)
 
         p_stt_lin = self.sequence_linear_layer(self.p_start_ff, p_level_h)  # (max_p_len, batch_size, ff_dim)

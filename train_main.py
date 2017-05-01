@@ -15,7 +15,7 @@ from base.utils import set_up_logger
 from utils import EpochResult, format_epoch_results, plot_epoch_results
 from reader import get_data, construct_answer_hat, write_test_predictions
 import subprocess
-from signal import *
+import signal
 
 class Config(object):
     def __init__(self, compared=[], **kwargs):
@@ -118,16 +118,29 @@ dataset_anss = trn_anss.long()
 dataset_ans_stts = trn_ans_stts.long()
 dataset_ans_ends = trn_ans_ends.long()
 
+if torch.cuda.is_available():
+    print("gpu pe dauhdha!")
+    gpu_avail = torch.cuda.device_count()
+    print(gpu_avail)
+    dataset_ctxs = trn_ctxs.long().cuda(0)
+    dataset_ctx_masks = trn_ctx_masks.long().cuda(0)
+    dataset_ctx_lens = trn_ctx_lens.long().cuda(0)
+    dataset_qtns = trn_qtns.long().cuda(0)
+    dataset_qtn_masks = trn_qtn_masks.long().cuda(0)
+    dataset_qtn_lens = trn_qtn_lens.long().cuda(0)
+    dataset_qtn_ctx_idxs = trn_qtn_ctx_idxs.long().cuda(0)
+    dataset_anss = trn_anss.long().cuda(0)
+    dataset_ans_stts = trn_ans_stts.long().cuda(0)
+    dataset_ans_ends = trn_ans_ends.long().cuda(0)
 
-"""
-uncomment this to print model parameters and check if model correctly made
-for name, param in model.state_dict().items():
-    print(name,)
 
-print('\n')
-for param in list(model.parameters()):
-    print(param.data.size())
-"""
+def print_param(mdoel):
+    for name, param in model.state_dict().items():
+        print(name,)
+
+    print('\n')
+    for param in list(model.parameters()):
+        print(param.data.size())
 
 loss_function = nn.NLLLoss()
 
@@ -145,12 +158,10 @@ def clean():
         avg_trn_acc = np.average(accs)
         fp.write("avg_loss: {} avg_acc: {} \n".format(avg_trn_loss, avg_trn_acc))
         torch.save(model.state_dict(), './model.pth')
-        print("dying done cleanup")
 
-signal.signal(signal.SIGKILL, clean)
+signal.signal(signal.SIGTERM, clean)
 
 def _trn_epoch(model, epochid, batchid = 0):
-    fp = open("meta_data.txt", "a")
     lr = 0.001
     #TODO: change this  to iterate over all samples, now we limit to 25% of the sample size
     ss = range(0, num_samples, config.batch_size)
@@ -211,20 +222,18 @@ def _trn_epoch(model, epochid, batchid = 0):
         losses.append(loss.data[0])
         accs.append(acc.data[0])
         
-        logger.info("loss: {} accuracy:{} epochID: {} batchID:{}".format(loss.data[0], acc.data[0], epochid, b))
-
-        if b % 700 == 0:
+        if b % 1100 == 0:
             #implementing a learning rate decay
             lr = lr * 0.95
             parameters = ifilter(lambda p: p.requires_grad, model.parameters())
             optimizer = optim.Adam(parameters, lr)
 
-        if b % 100 == 0:
+        if b % 10 == 0:
+            logger.info("loss: {} accuracy:{} epochID: {} batchID:{}".format(loss.data[0], acc.data[0], epochid, b))
 
-            logger.info("start saving model {}".format(time.time()))
+        if b % 100 == 0:
             #save frequency, creates a 140MB file
             torch.save(model.state_dict(), './model.pth')
-            logger.info("model saved {}".format(time.time()))
 
     trn_loss = np.average(losses)
     trn_acc = np.average(accs)
