@@ -163,7 +163,6 @@ signal.signal(signal.SIGTERM, clean)
 
 def _trn_epoch(model, epochid, batchid = 0):
     lr = 0.001
-    #TODO: change this  to iterate over all samples, now we limit to 25% of the sample size
     ss = range(0, num_samples, config.batch_size)
     for b, s in enumerate(ss, 1):
         if b < batchid:
@@ -174,22 +173,32 @@ def _trn_epoch(model, epochid, batchid = 0):
         if batch_idxs.size != config.batch_size:
             #in the last iteration if the size of the vector is not as batch size
             #GRU and LSTM layer would fail, since hidden state is initialized with fixed batch_size
+            #can be fixed by dyanmic hidden layer inits
             continue
 
         qtn_idxs = torch.from_numpy(batch_idxs).long()
+        if torch.cuda.is_available():
+            qtn_idxs = qtn_idxs.cuda(0)
+
         ctx_idxs = dataset_qtn_ctx_idxs[qtn_idxs].long()  # (batch_size,)
+
+        if torch.cuda.is_available():
+            ctx_idxs = ctx_idxs.cuda(0)
+
         p_lens = dataset_ctx_lens[ctx_idxs]  # (batch_size,)
         #pdb.set_trace()
         max_p_len = p_lens.max()
         p = dataset_ctxs[ctx_idxs][:, :max_p_len].transpose(0, 1)  # (max_p_len, batch_size)
         p_mask = dataset_ctx_masks[ctx_idxs][:, :max_p_len].transpose(0, 1).long()  # (max_p_len, batch_size)
-        float_p_mask = p_mask.float()
+        if torch.cuda.is_available():
+            p_mask = p_mask.cuda(0)        
 
         q_lens = dataset_qtn_lens[qtn_idxs]  # (batch_size,)
         max_q_len = q_lens.max()
         q = dataset_qtns[qtn_idxs][:, :max_q_len].transpose(0, 1)  # (max_q_len, batch_size)
         q_mask = dataset_qtn_masks[qtn_idxs][:, :max_q_len].transpose(0, 1).long()  # (max_q_len, batch_size)
-        float_q_mask = q_mask.float()
+        if torch.cuda.is_available():
+            q_mask = q_mask.cuda(0)
 
         a = Variable(dataset_anss[qtn_idxs])  # (batch_size,)
         #a_stt = dataset_ans_stts[qtn_idxs]  # (batch_size,)
