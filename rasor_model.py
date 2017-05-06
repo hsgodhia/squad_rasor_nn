@@ -68,8 +68,12 @@ class SquadModel(nn.Module):
         q_indep_h, self.hidden_qindp = self.q_indep_bilstm(q_emb, self.hidden_qindp)  #(max_q_len, batch_size, 2*config.hidden_dim) -- this represents eqn(9)
         q_indep_ff = self.sequence_linear_layer(self.ff_q_indep, q_indep_h) # (max_q_len, batch_size, ff_dim) -- represents the FFNN of eqn(10)
         q_indep_scores = self.sequence_linear_layer2(self.w_q, q_indep_ff) # (max_q_len, batch_size) -- completes the operation of eqn(10)
+        #not the above uses a Linear layer mapping the ff_dim to 1, so the last dimenion is 1, unsqueeze it
+        #is of type Variable having data as cuda.FloatTensor
+        q_indep_scores = q_indep_scores.squeeze(2)        
         #(N,L) goes to (N,L)
-        q_indep_scores = q_indep_scores * q_mask
+        q_mask_float = q_mask.float()
+        q_indep_scores = q_indep_scores * q_mask_float
         q_indep_weights = self.softmax(q_indep_scores.transpose(0,1)) #(batch_size, max_q_len)
         q_indep_weights = q_indep_weights.transpose(0,1)    #(max_q_len, batch_size)
         q_indep_weights = q_indep_weights.unsqueeze(2)  #(max_q_len, batch_size, 1)

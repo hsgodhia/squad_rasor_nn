@@ -203,7 +203,8 @@ def _trn_epoch(model, epochid):
         start_time = time.time()
         model.zero_grad()
         model.hidden = model.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
-
+        mode.hidden_qindp = model.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
+        
         scores = model(config, Variable(p, requires_grad=False), Variable(p_mask, requires_grad=False),
                        Variable(p_lens, requires_grad=False), Variable(q, requires_grad=False),
                        Variable(q_mask, requires_grad=False), Variable(q_lens, requires_grad=False))
