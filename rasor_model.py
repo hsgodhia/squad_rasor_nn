@@ -16,6 +16,8 @@ class SquadModel(nn.Module):
         self.embed.weight.data.copy_(emb_data)
         # used for eq(6) does FFNN(p_i)*FFNN(q_j)
         self.ff_align = nn.Linear(config.emb_dim, config.ff_dim)
+        # used for eq(10) does FFNN(q_j')
+        self.ff_q_indep = nn.Linear(2*config.hidden_dim, config.ff_dim)
         # used for eq(2) does FFNN(h_a) in a simplified form so that it can be re-used,
         # note: h_a = [u,v] where u and v are start and end words respectively
         # we have 2*config.hidden_dim since we are using a bi-directional LSTM
@@ -23,14 +25,19 @@ class SquadModel(nn.Module):
         self.p_start_ff = nn.Linear(2 * config.hidden_dim, config.ff_dim)
         # used for eq(2) plays the role of w_a
         self.w_a = nn.Linear(config.ff_dim, 1, bias=False)
+        # used for eq(10) plays the role of w_q
+        self.w_q = nn.Linear(config.ff_dim, 1, bias=False)
         self.relu = nn.ReLU()
         self.softmax = nn.Softmax()
         self.logsoftmax = nn.LogSoftmax()
         self.dropout = nn.Dropout(0.2)
+
+        self.hidden_qindp = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         self.hidden = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         # since we are using q_align and p_emb as p_star we have input as 2*emb_dim
         # num_layers = 2 and dropout = 0.1
-        self.gru = nn.LSTM(input_size = 2 * config.emb_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
+        self.gru = nn.LSTM(input_size = 2*config.emb_dim + 2*config.hidden_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
+        self.q_indep_bilstm = nn.LSTM(input_size = config.emb_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
         #change init_hidden when you change this gru/lstm
 
         parameters = ifilter(lambda p: p.requires_grad, self.parameters())
@@ -57,6 +64,23 @@ class SquadModel(nn.Module):
 
         p_star_parts = [p_emb]  # its a list,later we concatenate them into a tensor/variable
         p_star_dim = config.emb_dim
+
+        q_indep_h, self.hidden_qindp = self.q_indep_bilstm(q_emb, self.hidden_qindp)  #(max_q_len, batch_size, 2*config.hidden_dim) -- this represents eqn(9)
+        q_indep_ff = self.sequence_linear_layer(self.ff_q_indep, q_indep_h) # (max_q_len, batch_size, ff_dim) -- represents the FFNN of eqn(10)
+        q_indep_scores = self.sequence_linear_layer2(self.w_q, q_indep_ff) # (max_q_len, batch_size) -- completes the operation of eqn(10)
+        #(N,L) goes to (N,L)
+        q_indep_scores = q_indep_scores * q_mask
+        q_indep_weights = self.softmax(q_indep_scores.transpose(0,1)) #(batch_size, max_q_len)
+        q_indep_weights = q_indep_weights.transpose(0,1)    #(max_q_len, batch_size)
+        q_indep_weights = q_indep_weights.unsqueeze(2)  #(max_q_len, batch_size, 1)
+        q_indep_weights = q_indep_weights.expand(max_q_len, config.batch_size, 2*config.hidden_dim)
+
+        q_indep = q_indep_h * q_indep_weights #(max_q_len, batch_size, 2*config.hidden_dim)
+        q_indep = q_indep.sum(0)    #(1, batch_size, 2*config.hidden_dim)
+        q_indep = q_indep.expand(max_p_len, config.batch_size, 2*config.hidden_dim) #(max_p_len, batch_size, 2*config.hidden_dim)
+
+        p_star_parts.append(q_indep)
+        p_star_dim += 2 * config.hidden_dim
 
         #basiclly bring down the p_emb to ff_dim from embedding_dim, apply ReLU to it as well
         q_align_ff_p = self.sequence_linear_layer(self.ff_align, p_emb)  # (max_p_len, batch_size, ff_dim)
@@ -187,6 +211,17 @@ class SquadModel(nn.Module):
 
     #q_align_weights = self.softmax(q_align_mask_scores)  # (batch_size, max_p_len, max_q_len)
     def sequence_softmax(self, mat):
+        rand_v = torch.randn(mat.size())
+        if torch.cuda.is_available():
+            rand_v = rand_v.cuda(0)
+
+        nmat = Variable(rand_v)
+        for i in range(mat.size(1)):
+            nmat[:,i,:] = self.softmax(mat[:,i,:])
+        return nmat
+
+    # (max_q_len, batch_size, ff_dim)
+    def sequence_softmax2(self, mat):
         rand_v = torch.randn(mat.size())
         if torch.cuda.is_available():
             rand_v = rand_v.cuda(0)

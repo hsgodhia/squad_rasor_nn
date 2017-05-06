@@ -32,6 +32,7 @@ class Config(object):
         self.num_layers = 2 # number of BiLSTM layers, where BiLSTM is applied
         self.hidden_dim = 100  # dimension of hidden state of each uni-directional LSTM
         self.vocab_size = 114885
+        self.seed = np.random.random_integers(1e6, 1e9)
     
     def __repr__(self):
         ks = sorted(k for k in self.__dict__ if k not in ['name'])
@@ -149,21 +150,12 @@ if torch.cuda.is_available():
 valid_qtn_idxs = np.flatnonzero(data.trn.vectorized.qtn_ans_inds).astype(np.int32)
 num_samples = valid_qtn_idxs.size
 # probably shuffle the sample each epoch
-batch_sizes = []
-losses = []
-accs = []
-
-def clean():
-    with open("meta_data.txt") as fp:
-        avg_trn_loss = np.average(losses)
-        avg_trn_acc = np.average(accs)
-        fp.write("avg_loss: {} avg_acc: {} \n".format(avg_trn_loss, avg_trn_acc))
-        torch.save(model.state_dict(), './model.pth')
-
-signal.signal(signal.SIGTERM, clean)
 np_rng = np.random.RandomState(config.seed // 2)
 
 def _trn_epoch(model, epochid):
+    losses = []
+    accs = []
+    
     lr = 0.001    
     if epochid % 10 == 0:
         #implementing a learning rate decay
@@ -207,10 +199,7 @@ def _trn_epoch(model, epochid):
             q_mask = q_mask.cuda(0)
 
         a = Variable(dataset_anss[qtn_idxs])  # (batch_size,)
-        #a_stt = dataset_ans_stts[qtn_idxs]  # (batch_size,)
-        #a_end = dataset_ans_ends[qtn_idxs]  # (batch_size,)()
-
-        batch_sizes.append(len(batch_idxs))
+        
         start_time = time.time()
         model.zero_grad()
         model.hidden = model.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
@@ -235,7 +224,7 @@ def _trn_epoch(model, epochid):
 
         if b % 500 == 0:
             #save frequency, creates a 140MB file
-            torch.save(model.state_dict(), './model.pth')
+            torch.save(model.state_dict(), './model_full.pth')
 
     trn_loss = np.average(losses)
     trn_acc = np.average(accs)
@@ -247,19 +236,13 @@ def main():
         model = model.cuda()
 
     #check for old model if present
-    if os.path.isfile('./model.pth'):
-        model.load_state_dict(torch.load('./model.pth'))
+    if os.path.isfile('./model_full.pth'):
+        model.load_state_dict(torch.load('./model_full.pth'))
         #load the model from here instead 
     
     #Training
-    for epoch in range(21):
+    for epoch in range(13):
         trn_loss, trn_acc = _trn_epoch(model, epoch)
         logger.info("after epoch: {} avg. loss: {} avg. acc: {} ".format(epoch, trn_loss, trn_acc))
-
-    with open("meta_data.txt") as fp:
-        avg_trn_loss = np.average(losses)
-        avg_trn_acc = np.average(accs)
-        fp.write("across epooch average avg_loss: {} avg_acc: {} \n".format(avg_trn_loss, avg_trn_acc))
-    torch.save(model.state_dict(), './model.pth')
 
 main()
