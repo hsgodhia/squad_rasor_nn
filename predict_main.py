@@ -158,10 +158,8 @@ def _dev_epoch(model, epochid):
 
     ans_hat_starts = np.zeros(num_all_samples, dtype=np.int32)
     ans_hat_ends = np.zeros(num_all_samples, dtype=np.int32)
-    lr = 0.001    
+    
     np_rng.shuffle(valid_qtn_idxs)
-    parameters = ifilter(lambda p: p.requires_grad, model.parameters())
-    optimizer = optim.Adam(parameters, lr)
     ss = range(0, num_samples, config.batch_size)
     for b, s in enumerate(ss, 1):
 
@@ -199,9 +197,7 @@ def _dev_epoch(model, epochid):
         a = Variable(dataset_anss[qtn_idxs])  # (batch_size,)
         
         start_time = time.time()
-        model.zero_grad()
         model.hidden = model.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
-        model.hidden_qindp = model.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
 
         scores = model(config, Variable(p, requires_grad=False), Variable(p_mask, requires_grad=False),
                        Variable(p_lens, requires_grad=False), Variable(q, requires_grad=False),
@@ -212,14 +208,11 @@ def _dev_epoch(model, epochid):
         a_hats = a_hats.squeeze(1)
 
         ans_hat_start_word_idxs, ans_hat_end_word_idxs = _tt_ans_idx_to_ans_word_idxs(a_hats.data, config.max_ans_len)
-        ans_hat_starts[batch_idxs] = ans_hat_start_word_idxs.numpy()[0]
-        ans_hat_ends[batch_idxs] = ans_hat_end_word_idxs.numpy()[0]
+        ans_hat_starts[batch_idxs] = ans_hat_start_word_idxs.cpu().numpy()[0]
+        ans_hat_ends[batch_idxs] = ans_hat_end_word_idxs.cpu().numpy()[0]
 
         acc = torch.eq(a_hats, a).float().mean()
         
-        loss.backward()
-        optimizer.step()
-
         losses.append(loss.data[0])
         accs.append(acc.data[0])
         
@@ -236,9 +229,9 @@ def main():
         model = model.cuda()
 
     #check for old model if present
-    #if os.path.isfile('./model.pth'):
-    #    model.load_state_dict(torch.load('./model.pth'))
-    #    print("Found model, running on Dev!")
+    if os.path.isfile('./model_full.pth'):
+        model.load_state_dict(torch.load('./model_full.pth'))
+        print("Found model, running on Dev!")
         #load the model from here instead 
     
     dev_loss, dev_acc = _dev_epoch(model, 0)
