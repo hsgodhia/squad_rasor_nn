@@ -16,7 +16,6 @@ from base.utils import set_up_logger
 from utils import EpochResult, format_epoch_results, plot_epoch_results
 from reader import get_data, construct_answer_hat, write_test_predictions
 import subprocess
-import signal
 
 class Config(object):
     def __init__(self, compared=[], **kwargs):
@@ -96,43 +95,18 @@ logger = set_up_logger('logs/' + base_filename + '.log')
 title = '{}: {}'.format(__file__, config.name)
 logger.info('START ' + title + '\n\n{}\n'.format(config))
 data = get_data(config, train=True)
-
-
 emb_val = data.word_emb_data.word_emb  # (voc size, emb_dim)
 first_known_word = data.word_emb_data.first_known_word
 assert config.emb_dim == emb_val.shape[1]
 assert first_known_word > 0
 emb_val[:first_known_word] = 0
-
 emb = torch.from_numpy(emb_val)
 
+#load all the data, train and dev data
 trn_ctxs, trn_ctx_masks, trn_ctx_lens, trn_qtns, trn_qtn_masks, trn_qtn_lens, trn_qtn_ctx_idxs, trn_anss, trn_ans_stts, trn_ans_ends = _gpu_dataset(
     'trn', data.trn, config)
-
-dataset_ctxs = trn_ctxs.long()
-dataset_ctx_masks = trn_ctx_masks.long()
-dataset_ctx_lens = trn_ctx_lens.long()
-dataset_qtns = trn_qtns.long()
-dataset_qtn_masks = trn_qtn_masks.long()
-dataset_qtn_lens = trn_qtn_lens.long()
-dataset_qtn_ctx_idxs = trn_qtn_ctx_idxs.long()
-dataset_anss = trn_anss.long()
-dataset_ans_stts = trn_ans_stts.long()
-dataset_ans_ends = trn_ans_ends.long()
-
-if torch.cuda.is_available():
-    gpu_avail = torch.cuda.device_count()
-    dataset_ctxs = trn_ctxs.long().cuda(0)
-    dataset_ctx_masks = trn_ctx_masks.long().cuda(0)
-    dataset_ctx_lens = trn_ctx_lens.long().cuda(0)
-    dataset_qtns = trn_qtns.long().cuda(0)
-    dataset_qtn_masks = trn_qtn_masks.long().cuda(0)
-    dataset_qtn_lens = trn_qtn_lens.long().cuda(0)
-    dataset_qtn_ctx_idxs = trn_qtn_ctx_idxs.long().cuda(0)
-    dataset_anss = trn_anss.long().cuda(0)
-    dataset_ans_stts = trn_ans_stts.long().cuda(0)
-    dataset_ans_ends = trn_ans_ends.long().cuda(0)
-
+dev_ctxs, dev_ctx_masks, dev_ctx_lens, dev_qtns, dev_qtn_masks, dev_qtn_lens, dev_qtn_ctx_idxs, dev_anss, dev_ans_stts, dev_ans_ends = _gpu_dataset(
+    'dev', data.dev, config)
 
 def print_param(mdoel):
     for name, param in model.state_dict().items():
@@ -146,13 +120,130 @@ loss_function = nn.NLLLoss()
 if torch.cuda.is_available():
     loss_function = loss_function.cuda(0)
 
-# indices of questions which have a valid answer
-valid_qtn_idxs = np.flatnonzero(data.trn.vectorized.qtn_ans_inds).astype(np.int32)
-num_samples = valid_qtn_idxs.size
-# probably shuffle the sample each epoch
-np_rng = np.random.RandomState(config.seed // 2)
+def _dev_epoch(model, epochid):
+    # probably shuffle the sample each epoch
+    np_rng = np.random.RandomState(config.seed // 2)
+    dataset_ctxs = dev_ctxs.long()
+    dataset_ctx_masks = dev_ctx_masks.long()
+    dataset_ctx_lens = dev_ctx_lens.long()
+    dataset_qtns = dev_qtns.long()
+    dataset_qtn_masks = dev_qtn_masks.long()
+    dataset_qtn_lens = dev_qtn_lens.long()
+    dataset_qtn_ctx_idxs = dev_qtn_ctx_idxs.long()
+    dataset_anss = dev_anss.long()
+    dataset_ans_stts = dev_ans_stts.long()
+    dataset_ans_ends = dev_ans_ends.long()
+
+    if torch.cuda.is_available():
+        gpu_avail = torch.cuda.device_count()
+        dataset_ctxs = dataset_ctxs.long().cuda(0)
+        dataset_ctx_masks = dataset_ctx_masks.long().cuda(0)
+        dataset_ctx_lens = dataset_ctx_lens.long().cuda(0)
+        dataset_qtns = dataset_qtns.long().cuda(0)
+        dataset_qtn_masks = dataset_qtn_masks.long().cuda(0)
+        dataset_qtn_lens = dataset_qtn_lens.long().cuda(0)
+        dataset_qtn_ctx_idxs = dataset_qtn_ctx_idxs.long().cuda(0)
+        dataset_anss = dataset_anss.long().cuda(0)
+        dataset_ans_stts = dataset_ans_stts.long().cuda(0)
+        dataset_ans_ends = dataset_ans_ends.long().cuda(0)
+
+    losses = []
+    accs = []
+    num_all_samples = data.dev.vectorized.qtn_ans_inds.size
+    valid_qtn_idxs = np.flatnonzero(data.dev.vectorized.qtn_ans_inds).astype(np.int32)
+    # indices of questions which have a valid answer
+    num_samples = valid_qtn_idxs.size    
+    np_rng.shuffle(valid_qtn_idxs)
+    ss = range(0, num_samples, config.batch_size)
+    for b, s in enumerate(ss, 1):
+
+        batch_idxs = valid_qtn_idxs[s:min(s + config.batch_size, num_samples)]
+        if batch_idxs.size != config.batch_size:
+            #in the last iteration if the size of the vector is not as batch size
+            #GRU and LSTM layer would fail, since hidden state is initialized with fixed batch_size
+            #can be fixed by dyanmic hidden layer inits
+            continue
+
+        qtn_idxs = torch.from_numpy(batch_idxs).long()
+        if torch.cuda.is_available():
+            qtn_idxs = qtn_idxs.cuda(0)
+
+        ctx_idxs = dataset_qtn_ctx_idxs[qtn_idxs].long()  # (batch_size,)
+
+        if torch.cuda.is_available():
+            ctx_idxs = ctx_idxs.cuda(0)
+
+        p_lens = dataset_ctx_lens[ctx_idxs]  # (batch_size,)
+        #pdb.set_trace()
+        max_p_len = p_lens.max()
+        p = dataset_ctxs[ctx_idxs][:, :max_p_len].transpose(0, 1)  # (max_p_len, batch_size)
+        p_mask = dataset_ctx_masks[ctx_idxs][:, :max_p_len].transpose(0, 1).long()  # (max_p_len, batch_size)
+        if torch.cuda.is_available():
+            p_mask = p_mask.cuda(0)        
+
+        q_lens = dataset_qtn_lens[qtn_idxs]  # (batch_size,)
+        max_q_len = q_lens.max()
+        q = dataset_qtns[qtn_idxs][:, :max_q_len].transpose(0, 1)  # (max_q_len, batch_size)
+        q_mask = dataset_qtn_masks[qtn_idxs][:, :max_q_len].transpose(0, 1).long()  # (max_q_len, batch_size)
+        if torch.cuda.is_available():
+            q_mask = q_mask.cuda(0)
+
+        a = Variable(dataset_anss[qtn_idxs])  # (batch_size,)
+        
+        start_time = time.time()
+        model.hidden = model.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
+
+        scores = model(config, Variable(p, requires_grad=False), Variable(p_mask, requires_grad=False),
+                       Variable(p_lens, requires_grad=False), Variable(q, requires_grad=False),
+                       Variable(q_mask, requires_grad=False), Variable(q_lens, requires_grad=False))
+
+        loss = loss_function(scores, a)
+        _, a_hats = torch.max(scores, 1)
+        a_hats = a_hats.squeeze(1)
+
+        acc = torch.eq(a_hats, a).float().mean()
+        
+        losses.append(loss.data[0])
+        accs.append(acc.data[0])
+        
+        if b % 20 == 0:
+            logger.info("Dev loss: {} accuracy:{} epochID: {} batchID:{}".format(loss.data[0], acc.data[0], epochid, b))
+
+    dev_loss = np.average(losses)
+    dev_acc = np.average(accs)
+    return dev_loss, dev_acc
 
 def _trn_epoch(model, epochid):
+    # indices of questions which have a valid answer
+    valid_qtn_idxs = np.flatnonzero(data.trn.vectorized.qtn_ans_inds).astype(np.int32)
+    num_samples = valid_qtn_idxs.size
+    # probably shuffle the sample each epoch
+    np_rng = np.random.RandomState(config.seed // 2)
+
+    dataset_ctxs = trn_ctxs.long()
+    dataset_ctx_masks = trn_ctx_masks.long()
+    dataset_ctx_lens = trn_ctx_lens.long()
+    dataset_qtns = trn_qtns.long()
+    dataset_qtn_masks = trn_qtn_masks.long()
+    dataset_qtn_lens = trn_qtn_lens.long()
+    dataset_qtn_ctx_idxs = trn_qtn_ctx_idxs.long()
+    dataset_anss = trn_anss.long()
+    dataset_ans_stts = trn_ans_stts.long()
+    dataset_ans_ends = trn_ans_ends.long()
+
+    if torch.cuda.is_available():
+        gpu_avail = torch.cuda.device_count()
+        dataset_ctxs = dataset_ctxs.long().cuda(0)
+        dataset_ctx_masks = dataset_ctx_masks.long().cuda(0)
+        dataset_ctx_lens = dataset_ctx_lens.long().cuda(0)
+        dataset_qtns = dataset_qtns.long().cuda(0)
+        dataset_qtn_masks = dataset_qtn_masks.long().cuda(0)
+        dataset_qtn_lens = dataset_qtn_lens.long().cuda(0)
+        dataset_qtn_ctx_idxs = dataset_qtn_ctx_idxs.long().cuda(0)
+        dataset_anss = dataset_anss.long().cuda(0)
+        dataset_ans_stts = dataset_ans_stts.long().cuda(0)
+        dataset_ans_ends = dataset_ans_ends.long().cuda(0)
+
     losses = []
     accs = []
     
@@ -237,13 +328,17 @@ def main():
         model = model.cuda()
 
     #check for old model if present
-    if os.path.isfile('./model_full.pth'):
-        model.load_state_dict(torch.load('./model_full.pth'))
+    if os.path.isfile('./model.pth'):
+        model.load_state_dict(torch.load('./model.pth'))
         #load the model from here instead 
     
     #Training
     for epoch in range(13):
-        trn_loss, trn_acc = _trn_epoch(model, epoch)
-        logger.info("after epoch: {} avg. loss: {} avg. acc: {} ".format(epoch, trn_loss, trn_acc))
+        #trn_loss, trn_acc = _trn_epoch(model, epoch)
+        #logger.info("Training: After Epoch: {} avg. loss: {} avg. acc: {} ".format(epoch, trn_loss, trn_acc))
+
+        dev_loss, dev_acc = _dev_epoch(model, epoch)
+        logger.info("Dev: After Epoch: {} avg. loss: {} avg. acc: {} ".format(epoch, dev_loss, dev_acc))
+        break
 
 main()
