@@ -21,8 +21,8 @@ class SquadModel(nn.Module):
         # used for eq(2) does FFNN(h_a) in a simplified form so that it can be re-used,
         # note: h_a = [u,v] where u and v are start and end words respectively
         # we have 2*config.hidden_dim since we are using a bi-directional LSTM
-        self.p_end_ff = nn.Linear(2 * config.hidden_dim + 1, config.ff_dim)
-        self.p_start_ff = nn.Linear(2 * config.hidden_dim + 1, config.ff_dim)
+        self.p_end_ff = nn.Linear(2 * config.hidden_dim, config.ff_dim)
+        self.p_start_ff = nn.Linear(2 * config.hidden_dim, config.ff_dim)
         # used for eq(2) plays the role of w_a
         self.w_a = nn.Linear(config.ff_dim, 1, bias=False)
         # used for eq(10) plays the role of w_q
@@ -36,7 +36,7 @@ class SquadModel(nn.Module):
         self.hidden = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         # since we are using q_align and p_emb as p_star we have input as 2*emb_dim
         # num_layers = 2 and dropout = 0.1
-        self.gru = nn.LSTM(input_size = 2*config.emb_dim + 2*config.hidden_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
+        self.gru = nn.LSTM(input_size = 2*config.emb_dim + 1 + 2*config.hidden_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
         self.q_indep_bilstm = nn.LSTM(input_size = config.emb_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
         #change init_hidden when you change this gru/lstm
 
@@ -119,15 +119,12 @@ class SquadModel(nn.Module):
         q_align_weightsSum = q_align_weights_row.sum(1)#(batch_size,1,max_q_len)
         q_align_weightsSum_shuffled = q_align_weightsSum.permute(0,2,1)#(batch_size,max_q_len,1)
         att_over_att = torch.bmm(q_align_weights.cpu(),q_align_weightsSum_shuffled.cpu()) #(batch_size,max_p_len,1)
-
+    att_over_att = att_over_att.permute(1, 0, 2) #(max_p_len, batch_size, 1)
         if torch.cuda.is_available():
             att_over_att = att_over_att.cuda(0)
 
         p_star_parts.append(att_over_att)
         p_star_dim += 1
-
-
-
 
         q_emb_shuffled = q_emb.permute(1, 0, 2)  # (batch_size, max_q_len, emb_dim)
 
@@ -142,7 +139,7 @@ class SquadModel(nn.Module):
 
         p_star = torch.cat(p_star_parts, 2)  # (max_p_len, batch_size, p_star_dim)
         p_level_h, self.hidden = self.gru(p_star, self.hidden)  # (max_p_len, batch_size, 2*hidden_dim)
-
+    
         p_stt_lin = self.sequence_linear_layer(self.p_start_ff, p_level_h)  # (max_p_len, batch_size, ff_dim)
         p_end_lin = self.sequence_linear_layer(self.p_end_ff, p_level_h)  # (max_p_len, batch_size, ff_dim)
 
@@ -176,8 +173,8 @@ class SquadModel(nn.Module):
 
     def init_hidden(self, num_layers, hidden_dim, batch_size):
         """
-		h_0 (num_layers * num_directions, batch, hidden_size): tensor containing the initial hidden state for each element in the batch.
-		"""
+        h_0 (num_layers * num_directions, batch, hidden_size): tensor containing the initial hidden state for each element in the batch.
+        """
         zero_t = torch.zeros(num_layers * 2, batch_size, hidden_dim)
         if torch.cuda.is_available():
             zero_t = zero_t.cuda(0)
@@ -190,9 +187,9 @@ class SquadModel(nn.Module):
             init.xavier_uniform(param)
 
     def _span_sums(self, p_lens, stt, end, max_p_len, batch_size, dim, max_ans_len):
-        # stt 		(max_p_len, batch_size, dim)
-        # end 		(max_p_len, batch_size, dim)
-        # p_lens 	(batch_size,)
+        # stt       (max_p_len, batch_size, dim)
+        # end       (max_p_len, batch_size, dim)
+        # p_lens    (batch_size,)
 
         max_ans_len_range = torch.from_numpy(np.arange(max_ans_len))
         max_ans_len_range = max_ans_len_range.unsqueeze(0)  # (1, max_ans_len) is a vector like [0,1,2,3,4....,max_ans_len-1]
