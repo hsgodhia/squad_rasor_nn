@@ -30,14 +30,14 @@ class SquadModel(nn.Module):
         self.relu = nn.ReLU()
         self.softmax = nn.Softmax()
         self.logsoftmax = nn.LogSoftmax()
-        self.dropout = nn.Dropout(0.2)
+        self.dropout = nn.Dropout(0.6)
 
         self.hidden_qindp = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         self.hidden = self.init_hidden(config.num_layers, config.hidden_dim, config.batch_size)
         # since we are using q_align and p_emb as p_star we have input as 2*emb_dim
         # num_layers = 2 and dropout = 0.1
-        self.gru = nn.LSTM(input_size = 2*config.emb_dim + 2*config.hidden_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
-        self.q_indep_bilstm = nn.LSTM(input_size = config.emb_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.1, bidirectional=True)
+        self.gru = nn.LSTM(input_size = 2*config.emb_dim + 2*config.hidden_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.6, bidirectional=True)
+        self.q_indep_bilstm = nn.LSTM(input_size = config.emb_dim, hidden_size = config.hidden_dim, num_layers = config.num_layers, dropout=0.6, bidirectional=True)
         #change init_hidden when you change this gru/lstm
 
         parameters = ifilter(lambda p: p.requires_grad, self.parameters())

@@ -316,7 +316,7 @@ def _trn_epoch(model, epochid):
 
         if b % 500 == 0:
             #save frequency, creates a 140MB file
-            torch.save(model.state_dict(), './model_full.pth')
+            torch.save(model.state_dict(), './model_more_dropout.pth')
 
     trn_loss = np.average(losses)
     trn_acc = np.average(accs)
@@ -328,17 +328,16 @@ def main():
         model = model.cuda()
 
     #check for old model if present
-    if os.path.isfile('./model.pth'):
-        model.load_state_dict(torch.load('./model.pth'))
+    if os.path.isfile('./model_more_dropout.pth'):
+        model.load_state_dict(torch.load('./model_more_dropout.pth'))
         #load the model from here instead 
     
     #Training
     for epoch in range(13):
-        #trn_loss, trn_acc = _trn_epoch(model, epoch)
-        #logger.info("Training: After Epoch: {} avg. loss: {} avg. acc: {} ".format(epoch, trn_loss, trn_acc))
+        trn_loss, trn_acc = _trn_epoch(model, epoch)
+        logger.info("Training: After Epoch: {} avg. loss: {} avg. acc: {} ".format(epoch, trn_loss, trn_acc))
 
         dev_loss, dev_acc = _dev_epoch(model, epoch)
         logger.info("Dev: After Epoch: {} avg. loss: {} avg. acc: {} ".format(epoch, dev_loss, dev_acc))
-        break
 
 main()
